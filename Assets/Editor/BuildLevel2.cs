@@ -16,7 +16,9 @@ using TMPro;
 public static class BuildLevel2
 {
     // The map: one character = one tile (15 columns x 11 rows), same size as Level1.
-    // '#' = tree, 'W' = stone wall of the princess room, '_' = stone floor of the room, '.' = grass.
+    // '#' = tree, 'W' = stone wall of the princess room, '_' = stone floor of the room, '.' = grass,
+    // 'L' = lake: one round lake picture (with rocks) over all the 'L' cells. It blocks the way.
+    // 'r' = grass with small stones (decoration, you can walk on it).
     // Objects: S = hero start, c = coin, h = heart, m = slime, D = door (with the riddle), P = princess.
     static readonly string[] map =
     {
@@ -26,10 +28,10 @@ public static class BuildLevel2
         "#c#..#...cWWDW#",   // row 3
         "#..#.##.#..m..#",   // row 4
         "#..m.c....#.m.#",   // row 5
-        "#.###.#.###.#.#",   // row 6
-        "#cm.m.#.c...#c#",   // row 7
-        "#.#.###.#.#.#m#",   // row 8
-        "#...c..h..m...#",   // row 9
+        "#.#LLLL.###.#.#",   // row 6
+        "#cmLLLLrc...#c#",   // row 7
+        "#.#LLLL.#.#.#m#",   // row 8
+        "#.m.cr.h..m...#",   // row 9
         "###############",   // row 10
     };
 
@@ -59,6 +61,7 @@ public static class BuildLevel2
 
         RemoveLevel1Objects(scene);
         if (!PaintMap()) return;
+        AddLake();
 
         // Hero at the start
         FindRoot(scene, "Player").transform.position = CellCenter('S')[0];
@@ -106,6 +109,97 @@ public static class BuildLevel2
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         Debug.Log("Level2 built and saved.");
+    }
+
+    // ---------- Lake ----------
+
+    // Adds the lake to the Level2 that already exists, without building the whole level again
+    [MenuItem("Tools/Add Lake to Level2")]
+    static void AddLakeFromMenu()
+    {
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+        Scene scene = EditorSceneManager.OpenScene("Assets/Level2.unity", OpenSceneMode.Single);
+        AddLake();
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log("Lake added to Level2.");
+    }
+
+    // One round lake picture over all the 'L' cells (Assets/Art/Water/Lake.png, 4x3 tiles) with a group
+    // of 3 rocks on its shore (LakeRocks.png). Solid colliders follow the round water and each rock,
+    // so the knight and the slimes can't walk on them. Waves move on the water like on the river of Level1.
+    static void AddLake()
+    {
+        GameObject old = GameObject.Find("Lake");
+        if (old != null) Object.DestroyImmediate(old);   // running it again replaces the lake
+
+        // No trees under the water, small stones on the 'r' cells
+        Tilemap walls = GameObject.Find("Walls").GetComponent<Tilemap>();
+        Tilemap decorations = GameObject.Find("Decorations").GetComponent<Tilemap>();
+        List<Vector3> cells = CellCenter('L');
+        foreach (Vector3 pos in cells) walls.SetTile(walls.WorldToCell(pos), null);
+        foreach (Vector3 pos in CellCenter('r')) decorations.SetTile(decorations.WorldToCell(pos), LoadTile(43));
+
+        // The lake in the middle of its cells
+        Vector3 center = Vector3.zero;
+        foreach (Vector3 pos in cells) center += pos / cells.Count;
+        GameObject lake = new GameObject("Lake");
+        lake.transform.position = center;
+        SpriteRenderer sr = lake.AddComponent<SpriteRenderer>();
+        sr.sprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Art/Water/Lake.png");
+        sr.sortingOrder = -1;
+        PolygonCollider2D water = lake.AddComponent<PolygonCollider2D>();
+        water.pathCount = 1;   // replace the automatic outline by our own oval
+        water.SetPath(0, Oval(Vector2.zero, new Vector2(1.875f, 1.375f)));   // edge of the water (30 x 22 px)
+
+        // Rock group on the bottom-right shore, still inside the lake's cells (it blocks no path)
+        GameObject rocks = new GameObject("Rocks");
+        rocks.transform.SetParent(lake.transform);
+        rocks.transform.localPosition = new Vector3(1.3f, -0.95f, 0f);
+        SpriteRenderer rsr = rocks.AddComponent<SpriteRenderer>();
+        rsr.sprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Art/Water/LakeRocks.png");
+        rsr.sortingOrder = 0;   // over the water
+        PolygonCollider2D rockCollider = rocks.AddComponent<PolygonCollider2D>();
+        rockCollider.pathCount = 3;   // one oval per rock: big, medium, small
+        rockCollider.SetPath(0, Oval(new Vector2(-0.156f, -0.063f), new Vector2(0.32f, 0.26f)));
+        rockCollider.SetPath(1, Oval(new Vector2(0.219f, 0.125f), new Vector2(0.26f, 0.2f)));
+        rockCollider.SetPath(2, Oval(new Vector2(0.313f, -0.219f), new Vector2(0.2f, 0.17f)));
+
+        // Three waves on the water (same look as the river waves)
+        Sprite wave = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Art/Water/Wave.png");
+        Vector3[] wavePlaces = { new Vector3(-0.8f, 0.5f, 0f), new Vector3(0.7f, 0.1f, 0f), new Vector3(-0.2f, -0.6f, 0f) };
+        foreach (Vector3 place in wavePlaces)
+        {
+            GameObject w = new GameObject("Wave");
+            w.transform.SetParent(lake.transform);
+            w.transform.localPosition = place;
+            SpriteRenderer wsr = w.AddComponent<SpriteRenderer>();
+            wsr.sprite = wave;
+            wsr.color = new Color(0.8f, 0.95f, 1f, 0.85f);
+            w.AddComponent<WaterWaves>();
+        }
+
+        // A slime standing where the water is now goes to a free 'm' place of the map
+        List<Vector3> free = CellCenter('m');
+        Monster[] slimes = Object.FindObjectsOfType<Monster>();
+        foreach (Monster m in slimes) free.RemoveAll(p => Vector3.Distance(p, m.transform.position) < 0.5f);
+        foreach (Monster m in slimes)
+        {
+            bool inWater = cells.Exists(p => Vector3.Distance(p, m.transform.position) < 0.5f);
+            if (inWater && free.Count > 0) { m.transform.position = free[0]; free.RemoveAt(0); }
+        }
+    }
+
+    // Points of an oval (for the round colliders)
+    static Vector2[] Oval(Vector2 center, Vector2 radius)
+    {
+        Vector2[] points = new Vector2[32];
+        for (int i = 0; i < points.Length; i++)
+        {
+            float a = i * Mathf.PI * 2f / points.Length;
+            points[i] = center + new Vector2(Mathf.Cos(a) * radius.x, Mathf.Sin(a) * radius.y);
+        }
+        return points;
     }
 
     // ---------- Level ----------
@@ -205,7 +299,7 @@ public static class BuildLevel2
         RectTransform box = UIFactory.Frame("Box", popup, Vector2.zero, new Vector2(1000, 540), UIFactory.dark).rectTransform;
 
         UIFactory.Text("Title", box, "THE DOOR IS LOCKED", 48, UIFactory.gold, new Vector2(0, 195), new Vector2(920, 70)).fontStyle = FontStyles.Bold;
-        TMP_Text question = UIFactory.Text("Question", box, riddle.question, 36, UIFactory.cream, new Vector2(0, 95), new Vector2(920, 110));
+        TMP_Text question = UIFactory.Text("Question", box, riddle.question, 40, UIFactory.cream, new Vector2(0, 95), new Vector2(920, 110));
 
         Button[] buttons = new Button[3];
         TMP_Text[] labels = new TMP_Text[3];
@@ -215,7 +309,7 @@ public static class BuildLevel2
             UnityEventTools.AddIntPersistentListener(buttons[i].onClick, riddle.Answer, i);
         }
 
-        TMP_Text feedback = UIFactory.Text("Feedback", box, "", 32, UIFactory.red, new Vector2(0, -175), new Vector2(920, 60));
+        TMP_Text feedback = UIFactory.Text("Feedback", box, "", 32, UIFactory.red, new Vector2(0, -175), new Vector2(980, 60));   // wide enough for "Wrong answer! Back to the beginning..."
 
         riddle.riddlePanel = popup.gameObject;
         riddle.questionText = question;
@@ -232,7 +326,7 @@ public static class BuildLevel2
 
         UIFactory.Text("Title", box, "YOU WIN!", 72, UIFactory.gold, new Vector2(0, 160), new Vector2(920, 100)).fontStyle = FontStyles.Bold;
         UIFactory.Text("Text", box, "You saved the princess!", 40, UIFactory.cream, new Vector2(0, 65), new Vector2(920, 70));
-        TMP_Text score = UIFactory.Text("Score", box, "SCORE 0", 36, UIFactory.green, new Vector2(0, -10), new Vector2(920, 60));
+        TMP_Text score = UIFactory.Text("Score", box, "SCORE 0", 40, UIFactory.green, new Vector2(0, -10), new Vector2(920, 60));
 
         Button playAgain = UIFactory.MakeButton("PlayAgainButton", box, "PLAY AGAIN", new Vector2(0, -135), new Vector2(360, 100), out _);
         UnityEventTools.AddPersistentListener(playAgain.onClick, princess.PlayAgain);
