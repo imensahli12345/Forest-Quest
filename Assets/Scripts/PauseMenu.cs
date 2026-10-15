@@ -137,7 +137,7 @@ public class PauseMenu : MonoBehaviour
 
         // Main page
         mainPage = UIFactory.Panel("MainPage", box).gameObject;
-        UIFactory.Text("Hint", mainPage.transform, "Press Esc to continue", 26, UIFactory.cream, new Vector2(0, -235), new Vector2(700, 40));
+        UIFactory.Text("Hint", mainPage.transform, "Press Esc to continue", 24, UIFactory.cream, new Vector2(0, -235), new Vector2(700, 40));
         Vector2 size = new Vector2(460, 96);
         UIFactory.MakeButton("ResumeButton", mainPage.transform, "RESUME", new Vector2(0, 95), size, out _).onClick.AddListener(Resume);
         UIFactory.MakeButton("SettingsButton", mainPage.transform, "SETTINGS", new Vector2(0, -20), size, out _).onClick.AddListener(ShowSettingsPage);
