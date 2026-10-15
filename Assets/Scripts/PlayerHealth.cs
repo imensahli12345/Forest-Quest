@@ -1,6 +1,5 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 // Hearts of the hero. Touching a monster removes 1 heart.
 // Put this script on the Player (with PlayerController).
@@ -37,18 +36,64 @@ public class PlayerHealth : MonoBehaviour
         invincibleUntil = Time.time + invincibleTime;
 
         GameState.hearts = Mathf.Max(0, GameState.hearts - amount);   // never below 0
-        SoundFX.PlayHurt();
-        CameraFollow.Shake(0.1f, 0.2f);
-        StartCoroutine(Blink());
 
         if (GameState.hearts == 0)
         {
+            // Last heart lost: short death moment, then the GAME OVER pop-up
             isDead = true;
-            SceneManager.LoadScene("GameOver");   // GameOver must be in the Scene List
+            StopAllCoroutines();   // stop a Blink that could leave the hero hidden
+            StartCoroutine(Die());
+            return;
         }
+
+        SoundFX.PlayHurt();
+        CameraFollow.Shake(0.1f, 0.2f);
+        StartCoroutine(Blink());
     }
 
     private bool isDead = false;
+
+    // Death moment: everything freezes, the knight (and his sword) flash red and fade out,
+    // then the GAME OVER pop-up appears. Unscaled time, so it works while Time.timeScale = 0.
+    IEnumerator Die()
+    {
+        Time.timeScale = 0f;   // stops the hero, the monsters and the physics
+        SoundFX.PlayPlayerDeath();   // the soldier's death grunt (VoiceBosch, credited in the main menu)
+
+        SpriteRenderer[] parts = GetComponentsInChildren<SpriteRenderer>();
+        foreach (SpriteRenderer part in parts) part.enabled = true;
+
+        float duration = 1f;     // as long as the death grunt
+        for (float t = 0f; t < duration; t += Time.unscaledDeltaTime)
+        {
+            Color c = ((int)(t / 0.08f) % 2 == 0) ? Color.red : Color.white;   // flash red / white
+            c.a = 1f - t / duration;                                           // fade out
+            foreach (SpriteRenderer part in parts) part.color = c;
+            yield return null;
+        }
+        foreach (SpriteRenderer part in parts) part.enabled = false;
+
+        GameOverMenu.Show();   // existing pop-up and its sound
+    }
+
+    // Called by HeartPickup: the knight (and his sword) flash green, and the game keeps going
+    public void HealFlash()
+    {
+        if (isDead) return;
+        StartCoroutine(FlashGreen());
+    }
+
+    IEnumerator FlashGreen()
+    {
+        SpriteRenderer[] parts = GetComponentsInChildren<SpriteRenderer>();
+        for (float t = 0f; t < 0.6f; t += Time.deltaTime)
+        {
+            Color c = ((int)(t / 0.08f) % 2 == 0) ? Color.green : Color.white;   // flash green / white
+            foreach (SpriteRenderer part in parts) part.color = c;
+            yield return null;
+        }
+        foreach (SpriteRenderer part in parts) part.color = Color.white;   // normal colors again
+    }
 
     // The hero blinks while invincible
     IEnumerator Blink()

@@ -19,6 +19,8 @@ public class HeartPickup : MonoBehaviour
         }
 
         GameState.hearts = maxHearts;
+        PlayerHealth health = other.GetComponent<PlayerHealth>();
+        if (health != null) health.HealFlash();   // the hero flashes green
         MessageUI.Show("Your hearts are full again!");
         SoundFX.PlayKey();
         Destroy(gameObject);
